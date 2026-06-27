@@ -1,0 +1,390 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+<title>Conveyor Trucks Queue</title>
+<style>
+  * { box-sizing:border-box; user-select:none; -webkit-user-select:none; touch-action:manipulation; }
+  body { margin:0; overflow:hidden; font-family:Arial,sans-serif; background:linear-gradient(180deg,#f7fbff,#dcecff); }
+  #game {
+    position:relative; width:100vw; height:100vh; max-width:480px; margin:0 auto; overflow:hidden;
+    background:radial-gradient(circle at 50% 12%,#fff,transparent 36%),linear-gradient(180deg,#f8fcff,#d7e9ff);
+  }
+  .topbar {
+    position:absolute; top:15px; left:16px; right:16px; display:flex; justify-content:space-between; align-items:center;
+    z-index:20; color:#2f3c55; font-weight:900;
+  }
+  .pill { background:rgba(255,255,255,.86); padding:10px 14px; border-radius:18px; box-shadow:0 8px 20px rgba(60,80,120,.14); }
+  #replay {
+    width:46px; height:46px; border:0; border-radius:50%; background:white; font-size:22px;
+    box-shadow:0 8px 20px rgba(60,80,120,.18);
+  }
+  #hint {
+    position:absolute; top:73px; left:20px; right:20px; text-align:center; color:#5a6c83; font-size:13px;
+    font-weight:800; line-height:1.25;
+  }
+  #boardWrap {
+    position:absolute; left:50%; top:40%; transform:translate(-50%,-50%);
+    width:min(88vw,410px); aspect-ratio:1/1;
+  }
+  #board {
+    position:absolute; inset:34px; border-radius:24px; background:rgba(255,255,255,.66);
+    box-shadow:inset 0 0 0 2px rgba(255,255,255,.75),0 18px 42px rgba(60,80,120,.18);
+  }
+  .cell {
+    position:absolute; border-radius:13px; background:#f9fbff;
+    box-shadow:inset 0 -5px rgba(80,110,160,.08), inset 0 0 0 2px rgba(130,160,200,.28);
+    display:flex; align-items:center; justify-content:center; font-size:30px; color:#62738b; font-weight:900;
+    transition:transform .12s,background .12s;
+  }
+  .cell:active { transform:scale(.94); }
+  .cell.locked { background:#d8dee8; color:#8b95a5; }
+  .cell.spawn { background:#fff6d6; }
+  .truck {
+    position:absolute; width:62px; height:50px; border-radius:13px 13px 10px 10px;
+    box-shadow:inset 0 -8px rgba(0,0,0,.12),0 8px 18px rgba(60,80,120,.18);
+    display:flex; align-items:center; justify-content:center; color:white; font-weight:900; font-size:16px; z-index:8;
+  }
+  .truck::after {
+    content:""; position:absolute; bottom:-8px; left:10px; width:11px; height:11px; border-radius:50%; background:#334; box-shadow:30px 0 #334;
+  }
+  .truck.done { transform:scale(.88); opacity:.35; filter:saturate(.6); }
+  .truck.bump { animation:bump .25s ease; }
+  @keyframes bump { 0%{transform:scale(1)} 50%{transform:scale(1.15)} 100%{transform:scale(1)} }
+  .ball {
+    position:absolute; border-radius:50%; width:30px; height:30px; display:grid; place-items:center; color:white;
+    font-weight:900; font-size:14px; text-shadow:0 2px 0 rgba(0,0,0,.45), 0 0 4px rgba(0,0,0,.35); -webkit-text-stroke:.6px rgba(0,0,0,.35);
+    box-shadow:inset 0 -7px rgba(0,0,0,.14),0 7px 14px rgba(60,80,120,.24);
+    z-index:30; transition:left .34s linear,top .34s linear,transform .22s ease,opacity .22s ease;
+  }
+  #queues {
+    position:absolute; left:50%; bottom:30px; transform:translateX(-50%);
+    width:min(88vw,410px); min-height:190px; border-radius:28px;
+    background:rgba(255,255,255,.78); box-shadow:0 12px 28px rgba(60,80,120,.16);
+    display:flex; align-items:flex-end; justify-content:center; gap:16px; padding:16px 18px;
+    z-index:10;
+  }
+  .lane {
+    width:74px; min-height:154px; display:flex; flex-direction:column; justify-content:flex-start; align-items:center; gap:7px;
+  }
+  .lane .qball { order:2; }
+  .lane .qball.front { order:1; }
+  .qball {
+    width:58px; height:45px; border-radius:22px 22px 17px 17px; display:grid; place-items:center;
+    color:white; font-weight:900; font-size:25px; text-shadow:0 3px 0 rgba(0,0,0,.45), 0 0 5px rgba(0,0,0,.35); -webkit-text-stroke:1px rgba(0,0,0,.38);
+    box-shadow:inset 0 -8px rgba(0,0,0,.14),0 8px 15px rgba(60,80,120,.18);
+    position:relative; transition:transform .12s,opacity .12s;
+  }
+  .qball::before {
+    content:""; position:absolute; top:-6px; left:17px; width:10px; height:12px; border-radius:9px 9px 3px 3px;
+    background:inherit; box-shadow:14px 0 currentColor; opacity:.9;
+  }
+  .qball.front { cursor:pointer; outline:4px solid rgba(255,255,255,.98); transform:scale(1.07); box-shadow:inset 0 -8px rgba(0,0,0,.14),0 8px 15px rgba(60,80,120,.18),0 0 0 3px rgba(40,55,85,.15); }
+  .qball.front:active { transform:scale(.96); }
+  .qball.lockedQ { opacity:.55; transform:scale(.92); }
+  #overlay {
+    position:absolute; inset:0; display:none; align-items:center; justify-content:center; z-index:100;
+    background:rgba(35,50,75,.25); backdrop-filter:blur(4px);
+  }
+  #card {
+    background:white; color:#2f3c55; border-radius:30px; padding:28px 34px; text-align:center; font-weight:900;
+    box-shadow:0 24px 70px rgba(35,50,75,.3);
+  }
+  #card .big { font-size:42px; margin-bottom:8px; }
+  #cardReplay {
+    margin-top:18px; border:0; border-radius:24px; background:#33465f; color:white; font-weight:900;
+    font-size:17px; padding:13px 34px; box-shadow:0 12px 24px rgba(50,70,100,.24);
+  }
+</style>
+</head>
+<body>
+<div id="game">
+  <div class="topbar">
+    <div class="pill">LEVEL 1</div>
+    <div class="pill" id="timer">TIME 60</div>
+    <button id="replay">↻</button>
+  </div>
+  <div id="hint">Sadece her sütunun öndeki topuna tıklanır. Top üzerindeki sayı kadar aynı renk kamyon ihtiyacını azaltır.</div>
+
+  <div id="boardWrap"><div id="board"></div></div>
+  <div id="queues"></div>
+
+  <div id="overlay"><div id="card"><div class="big" id="result">WIN!</div><div id="resultText">Harika rota!</div><button id="cardReplay">REPLAY</button></div></div>
+</div>
+
+<script>
+const game = document.getElementById("game");
+const boardWrap = document.getElementById("boardWrap");
+const board = document.getElementById("board");
+const queuesEl = document.getElementById("queues");
+const timerEl = document.getElementById("timer");
+const replayBtn = document.getElementById("replay");
+const cardReplay = document.getElementById("cardReplay");
+const overlay = document.getElementById("overlay");
+const result = document.getElementById("result");
+const resultText = document.getElementById("resultText");
+
+const N = 5, gap = 7;
+let cell = 0, grid = [], trucks = [], lanes = [];
+let runningBalls = 0, timeLeft = 60, timerInterval = null, gameOver = false;
+
+const colors = {
+  red:"#f25b5b", blue:"#4d8cff", yellow:"#f4c84c", green:"#43c878", purple:"#a56cff", pink:"#ec4fab"
+};
+const dirArrow = ["→","↓","←","↑"];
+const dirVec = [[1,0],[0,1],[-1,0],[0,-1]];
+
+const initialGrid = [
+  [0,0,1,2,1],
+  [3,1,0,1,1],
+  [0,0,0,3,2],
+  [3,1,0,0,2],
+  [0,3,0,3,2]
+];
+const spawn = {x:0,y:2};
+const locked = new Set(["0,2"]);
+
+const initialTrucks = [
+  {id:"tRed", color:"red", need:90, side:"right", x:4, y:0},
+  {id:"tBlue", color:"blue", need:80, side:"right", x:4, y:3},
+  {id:"tYellow", color:"yellow", need:70, side:"left", x:0, y:4}
+];
+
+const initialLanes = [
+  [{color:"red",value:20},{color:"blue",value:40},{color:"yellow",value:20},{color:"red",value:30}],
+  [{color:"yellow",value:40},{color:"purple",value:40},{color:"blue",value:20},{color:"yellow",value:20}],
+  [{color:"blue",value:40},{color:"red",value:20},{color:"yellow",value:30},{color:"blue",value:20}]
+];
+
+function reset() {
+  clearInterval(timerInterval);
+  grid = JSON.parse(JSON.stringify(initialGrid));
+  trucks = JSON.parse(JSON.stringify(initialTrucks));
+  lanes = JSON.parse(JSON.stringify(initialLanes));
+  timeLeft = 60;
+  runningBalls = 0;
+  gameOver = false;
+  overlay.style.display = "none";
+  updateTimer();
+  render();
+}
+
+function render() {
+  board.innerHTML = "";
+  document.querySelectorAll(".truck").forEach(e=>e.remove());
+  const r = board.getBoundingClientRect();
+  cell = (r.width - gap*(N+1)) / N;
+
+  for (let y=0;y<N;y++) for (let x=0;x<N;x++) {
+    const c = document.createElement("div");
+    c.className = "cell";
+    if (locked.has(`${x},${y}`)) c.classList.add("locked");
+    if (x===spawn.x && y===spawn.y) c.classList.add("spawn");
+    c.style.left = px(gap + x*(cell+gap));
+    c.style.top = px(gap + y*(cell+gap));
+    c.style.width = px(cell);
+    c.style.height = px(cell);
+    c.innerHTML = dirArrow[grid[y][x]];
+    c.onclick = () => rotateCell(x,y);
+    board.appendChild(c);
+  }
+  renderTrucks();
+  renderQueues();
+}
+
+function renderTrucks() {
+  const wrapR = boardWrap.getBoundingClientRect(), boardR = board.getBoundingClientRect();
+  const ox = boardR.left - wrapR.left, oy = boardR.top - wrapR.top;
+
+  trucks.forEach(t=>{
+    const el = document.createElement("div");
+    el.className = "truck" + (t.need<=0 ? " done" : "");
+    el.id = t.id;
+    el.style.background = colors[t.color];
+    el.textContent = Math.max(0,t.need);
+    const cx = ox + gap + t.x*(cell+gap) + cell/2;
+    const cy = oy + gap + t.y*(cell+gap) + cell/2;
+    if (t.side==="right") { el.style.left = px(cx + cell/2 + 10); el.style.top = px(cy - 25); }
+    if (t.side==="left") { el.style.left = px(cx - cell/2 - 72); el.style.top = px(cy - 25); }
+    if (t.side==="top") { el.style.left = px(cx - 31); el.style.top = px(cy - cell/2 - 60); }
+    if (t.side==="bottom") { el.style.left = px(cx - 31); el.style.top = px(cy + cell/2 + 10); }
+    boardWrap.appendChild(el);
+  });
+}
+
+function renderQueues() {
+  queuesEl.innerHTML = "";
+  lanes.forEach((lane, laneIdx)=>{
+    const laneEl = document.createElement("div");
+    laneEl.className = "lane";
+    laneEl.dataset.lane = laneIdx;
+
+    lane.forEach((b, idx)=>{
+      const el = document.createElement("div");
+      const isFront = idx === 0;
+      el.className = "qball " + (isFront ? "front" : "lockedQ");
+      el.style.background = colors[b.color];
+      el.textContent = b.value;
+      el.dataset.lane = laneIdx;
+      el.dataset.index = idx;
+
+      // Her sütunda yalnızca en öndeki top clickable.
+      // Tıklanınca o top anında kuyruktan çıkar, arkasındakiler hemen bir ileri gelir.
+      if (isFront) {
+        el.onclick = (ev) => {
+          ev.stopPropagation();
+          launchFromLane(laneIdx);
+        };
+      }
+
+      laneEl.appendChild(el);
+    });
+
+    queuesEl.appendChild(laneEl);
+  });
+}
+
+function rotateCell(x,y) {
+  if (gameOver || locked.has(`${x},${y}`)) return;
+  grid[y][x] = (grid[y][x] + 1) % 4;
+  render();
+}
+
+function launchFromLane(laneIdx) {
+  if (gameOver) return;
+  if (!timerInterval) startTimer();
+
+  const lane = lanes[laneIdx];
+  if (!lane || lane.length === 0) return;
+
+  // Sadece bu sütunun en öndeki topu çıkar.
+  // Aynı sütundaki arkadakiler hemen öne kayar; diğer sütunları beklemez.
+  const ball = lane.shift();
+  renderQueues();
+
+  runBall(ball);
+}
+
+async function runBall(data) {
+  runningBalls++;
+  let x = spawn.x, y = spawn.y, steps = 0;
+  const ball = document.createElement("div");
+  ball.className = "ball";
+  ball.style.background = colors[data.color];
+  ball.textContent = data.value;
+  game.appendChild(ball);
+  setBallAt(ball,x,y);
+  await sleep(220);
+
+  while (!gameOver && steps < 40) {
+    steps++;
+    const collected = checkTruckCollect(data, x, y, ball);
+    if (collected) {
+      await flyToTruck(ball, collected);
+      ball.remove();
+      runningBalls--;
+      checkEnd();
+      return;
+    }
+
+    const d = grid[y][x];
+    x += dirVec[d][0];
+    y += dirVec[d][1];
+
+    if (x<0 || x>=N || y<0 || y>=N) {
+      ball.style.top = px(window.innerHeight + 40);
+      ball.style.opacity = "0";
+      ball.style.transform = "scale(.85)";
+      await sleep(420);
+      ball.remove();
+      runningBalls--;
+      checkEnd();
+      return;
+    }
+
+    setBallAt(ball,x,y);
+    await sleep(390);
+  }
+
+  ball.style.opacity = "0";
+  ball.style.transform = "scale(.1)";
+  await sleep(220);
+  ball.remove();
+  runningBalls--;
+  checkEnd();
+}
+
+function checkTruckCollect(data,x,y,ball) {
+  for (const t of trucks) {
+    if (t.need <= 0 || t.color !== data.color) continue;
+    if (t.x === x && t.y === y) {
+      t.need = Math.max(0, t.need - data.value);
+      const el = document.getElementById(t.id);
+      if (el) {
+        el.textContent = Math.max(0,t.need);
+        el.classList.add("bump");
+        setTimeout(()=>el.classList.remove("bump"),260);
+        if (t.need<=0) el.classList.add("done");
+      }
+      return t;
+    }
+  }
+  return null;
+}
+
+function setBallAt(ball,x,y) {
+  const boardR = board.getBoundingClientRect(), gameR = game.getBoundingClientRect();
+  ball.style.left = px(boardR.left - gameR.left + gap + x*(cell+gap) + cell/2 - 15);
+  ball.style.top = px(boardR.top - gameR.top + gap + y*(cell+gap) + cell/2 - 15);
+}
+
+async function flyToTruck(ball,t) {
+  const tr = document.getElementById(t.id);
+  if (!tr) return;
+  const rr = tr.getBoundingClientRect(), gr = game.getBoundingClientRect();
+  ball.style.left = px(rr.left - gr.left + rr.width/2 - 15);
+  ball.style.top = px(rr.top - gr.top + rr.height/2 - 15);
+  ball.style.transform = "scale(.25)";
+  ball.style.opacity = ".25";
+  await sleep(260);
+}
+
+function startTimer() {
+  clearInterval(timerInterval);
+  timerInterval = setInterval(()=>{
+    if (gameOver) return;
+    timeLeft--;
+    updateTimer();
+    if (timeLeft <= 0) showResult(false, "Süre bitti.");
+  },1000);
+}
+
+function updateTimer() { timerEl.textContent = "TIME " + timeLeft; }
+
+function checkEnd() {
+  if (gameOver) return;
+  if (trucks.every(t=>t.need<=0)) return showResult(true, "Tüm kamyonlar doldu.");
+  const ballsLeft = lanes.some(l=>l.length>0);
+  if (!ballsLeft && runningBalls<=0) showResult(false, "Toplar bitti ama hedefler tamamlanmadı.");
+}
+
+function showResult(winState,text) {
+  if (gameOver) return;
+  clearInterval(timerInterval);
+  gameOver = true;
+  result.textContent = winState ? "WIN!" : "LOSE";
+  resultText.textContent = text;
+  overlay.style.display = "flex";
+}
+
+function sleep(ms){ return new Promise(r=>setTimeout(r,ms)); }
+function px(v){ return v + "px"; }
+
+replayBtn.onclick = reset;
+cardReplay.onclick = reset;
+window.addEventListener("resize", reset);
+reset();
+</script>
+</body>
+</html>
